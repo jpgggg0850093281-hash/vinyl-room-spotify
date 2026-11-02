@@ -815,3 +815,27 @@ $('cloudDownload').onclick=()=>run(async()=>{
  select(tracks[0]||emptyRecord);window.VinylRoomUI?.showLibrary();status('已下載 '+tracks.length+' 張收藏與 DIY 設計。');
 });
 })();
+
+
+// 匿名問卷使用獨立請求，不帶 Spotify 或雲端帳號的登入憑證。
+(()=>{
+const form=document.getElementById('surveyForm'),dialog=document.getElementById('surveyDialog'),button=document.getElementById('submitSurvey'),message=document.getElementById('surveyStatus');
+let sending=false,submitted=false,requestId=crypto.randomUUID(),submittedBody=null;
+for(const id of ['openSurveyHeader','openSurveyShelf'])document.getElementById(id).onclick=()=>dialog.showModal();
+document.getElementById('closeSurvey').onclick=()=>dialog.close();
+document.getElementById('surveySuggestion').oninput=e=>document.getElementById('surveyCount').textContent=e.target.value.length;
+form.onsubmit=async event=>{
+ event.preventDefault();if(sending||submitted||!form.reportValidity())return;
+ const values=new FormData(form),answers={frequency:values.get('frequency'),ease:Number(values.get('ease')),favorite:values.get('favorite'),intention:Number(values.get('intention')),suggestion:String(values.get('suggestion')||'').trim()};
+ // 相同答案重試沿用同一編號，避免逾時後重送造成重複回覆。
+ const fingerprint=JSON.stringify(answers);if(submittedBody!==null&&submittedBody!==fingerprint)requestId=crypto.randomUUID();submittedBody=fingerprint;
+ sending=true;button.disabled=true;button.textContent='送出中…';message.textContent='正在儲存你的回饋，請稍候。';
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+ try{
+ const response=await fetch('https://flagnozpqwcmeyubhvfj.supabase.co/rest/v1/vinyl_survey_responses',{method:'POST',credentials:'omit',headers:{apikey:'sb_publishable_XWsD8YUa3jMUZV5pjI7FyA_XnbrcXSg','Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({id:requestId,...answers}),signal:controller.signal});
+ if(!response.ok){const failure=await response.json().catch(()=>({}));if(!(response.status===409&&failure.code==='23505'))throw Error('儲存未完成');}
+ submitted=true;form.hidden=true;message.textContent='謝謝你的回饋！你的答案已成功送出，會作為拾音室改善的參考。';message.focus();
+ }catch{message.textContent='目前無法確認送出成功，答案已保留。請檢查網路後再按一次送出。';}
+ finally{clearTimeout(timer);sending=false;button.disabled=submitted;button.textContent='送出回饋';}
+};
+})();
