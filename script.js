@@ -521,6 +521,29 @@ el('vinylPreview').addEventListener('pointerdown',e=>{if(draft?.pattern!=='image
 el('vinylPreview').addEventListener('pointermove',e=>{if(imageDrag?.id!==e.pointerId)return;const d=imageDrag,w=d.size*Math.max(1,draft.imageRatio||1)*(draft.imageZoom||1),h=w/(draft.imageRatio||1);draft={...draft,imageX:w>d.size+.1?Math.max(0,Math.min(100,d.px-(e.clientX-d.x)/(w-d.size)*100)):50,imageY:h>d.size+.1?Math.max(0,Math.min(100,d.py-(e.clientY-d.y)/(h-d.size)*100)):50};controls(draft);applyEffects(draft)});
 for(const type of ['pointerup','pointercancel','lostpointercapture'])el('vinylPreview').addEventListener(type,()=>imageDrag=null);
 function colorHex(h,s,l){s/=100;l/=100;const a=s*Math.min(l,1-l),channel=n=>{const k=(n+h/30)%12;return Math.round(255*(l-a*Math.max(-1,Math.min(k-3,9-k,1)))).toString(16).padStart(2,'0')};return '#'+channel(0)+channel(8)+channel(4)}
+// 從封面擷取主要色彩，並套入唱片主色與花紋色。
+async function useCoverColors(){
+ const message=el('coverColorStatus'),button=el('useCoverColors');
+ const source=imageURL(selected),recordId=selected.id;
+ if(!source){message.textContent='請先選擇有封面的唱片。';return}
+ if(draft?.pattern==='image'){message.textContent='圖片唱片無法套用配色，請先選擇其他花紋。';return}
+ button.disabled=true;message.textContent='正在分析封面顏色…';
+ try{
+  const image=new Image();if(!source.startsWith('data:')&&!source.startsWith('blob:'))image.crossOrigin='anonymous';
+  await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;image.src=source});
+  const canvas=document.createElement('canvas');canvas.width=64;canvas.height=64;const context=canvas.getContext('2d');
+  if(!context)throw new Error('無法分析圖片');context.drawImage(image,0,0,64,64);
+  const pixels=context.getImageData(0,0,64,64).data,groups=new Map();
+  for(let i=0;i<pixels.length;i+=4){if(pixels[i+3]<128)continue;const r=Math.min(255,Math.round(pixels[i]/32)*32),g=Math.min(255,Math.round(pixels[i+1]/32)*32),b=Math.min(255,Math.round(pixels[i+2]/32)*32),key=[r,g,b].join(',');groups.set(key,(groups.get(key)||0)+1)}
+  const colors=[...groups].sort((a,b)=>b[1]-a[1]).map(([key])=>key.split(',').map(Number));if(!colors.length)throw new Error('沒有可用顏色');
+  if(selected.id!==recordId||!el('diyDialog').open){message.textContent='唱片已切換，請重新擷取配色。';return}
+  const main=colors[0],accent=colors.find(c=>Math.hypot(c[0]-main[0],c[1]-main[1],c[2]-main[2])>65)||colors[1]||main;
+  const hex=c=>'#'+c.map(v=>v.toString(16).padStart(2,'0')).join('');
+  el('vinylColor').value=hex(main);el('vinylAccent').value=hex(accent);readInputs();paint({...draft},640);
+  message.textContent='已套用封面配色；滿意後請按「儲存設計」。';
+ }catch{message.textContent='無法讀取這張封面，請改用自行上傳的封面再試。'}finally{button.disabled=false}
+}
+el('useCoverColors').onclick=useCoverColors;
 let lastRandomHue=null;
 el('randomVinylColors').onclick=()=>{if(!draft||draft.pattern==='image')return;let h;do{h=Math.random()*360}while(lastRandomHue!==null&&Math.min(Math.abs(h-lastRandomHue),360-Math.abs(h-lastRandomHue))<55);lastRandomHue=h;const scheme=Math.floor(Math.random()*6),s=28+Math.random()*66,l=16+Math.random()*68,offset=[22,75,145,180,220,290][scheme]+Math.random()*25-12;const color=colorHex(h,s,l),accent=colorHex((h+offset+360)%360,25+Math.random()*70,l>55?12+Math.random()*32:60+Math.random()*32);fillDesign({...draft,color,accent,seed:Math.floor(Math.random()*1e8)});el('randomColorStatus').textContent='已產生新配色與紋理；儲存設計後保留。'};
 el('remixVinyl').onclick=()=>{draft={...draft,seed:Math.floor(Math.random()*1e8)};paint(draft)};
